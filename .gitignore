@@ -1,0 +1,8 @@
+# Generated test output (CSVs + PNGs from executor benchmark runs)
+data/
+plots/
+
+# colcon build artefacts, should anyone build outside the container
+build/
+install/
+log/

@@ -1,0 +1,78 @@
+name: executor_comparison
+
+# Every executor service shares one image: the executor is chosen at run time
+# by the launch file, not baked into the build, so the first `--build` is the
+# only slow one.
+x-common: &common
+  environment:
+    - DISPLAY
+    - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+  network_mode: host
+  ipc: host
+  shm_size: "1gb"
+  volumes:
+    - /dev:/dev
+    - $XAUTHORITY:/root/.Xauthority
+    - ../src:/ros2_ws/src
+    - ../data:/data
+  build: &common_build
+    context: ..
+    dockerfile: docker/Dockerfile
+    network: host
+
+services:
+  # Wait set, one thread. What plain rclcpp::spin() and a bare
+  # component_container give you, and the baseline for everything else.
+  single_threaded:
+    <<: *common
+    build: *common_build
+    command: >
+      ros2 launch executor_comparison executor_bench.launch.py
+      executor:=single_threaded
+
+  # Wait set, N threads. Parallelism is bounded by the callback groups, so
+  # pair it with callback_group:=reentrant or per_entity to see any.
+  multi_threaded:
+    <<: *common
+    build: *common_build
+    command: >
+      ros2 launch executor_comparison executor_bench.launch.py
+      executor:=multi_threaded
+
+  # Events queue, N threads. New in Lyrical.
+  events_cbg:
+    <<: *common
+    build: *common_build
+    command: >
+      ros2 launch executor_comparison executor_bench.launch.py
+      executor:=events_cbg
+
+  # Events queue, one thread. The experimental predecessor of events_cbg,
+  # kept in the comparison because it is still what most events-executor
+  # numbers in the wild were measured against.
+  events:
+    <<: *common
+    build: *common_build
+    command: >
+      ros2 launch executor_comparison executor_bench.launch.py
+      executor:=events
+
+  # One thread per callback group, from TIER IV / Autoware. Not an rclcpp
+  # executor: it ships its own component container, which the launch file
+  # selects automatically. num_threads maps to reentrant_parallelism.
+  callback_isolated:
+    <<: *common
+    build: *common_build
+    command: >
+      ros2 launch executor_comparison executor_bench.launch.py
+      executor:=callback_isolated
+
+  # Standalone plotter — reads the CSVs written by the other services and
+  # emits PNGs into the same data volume.
+  plot:
+    build:
+      context: ..
+      dockerfile: docker/plot.Dockerfile
+    volumes:
+      - ../scripts:/work/scripts:ro
+      - ../data:/data

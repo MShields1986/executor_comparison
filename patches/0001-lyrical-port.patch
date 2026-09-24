@@ -1,0 +1,208 @@
+diff --git a/callback_isolated_executor/CMakeLists.txt b/callback_isolated_executor/CMakeLists.txt
+index ee19e13..3c76c38 100644
+--- a/callback_isolated_executor/CMakeLists.txt
++++ b/callback_isolated_executor/CMakeLists.txt
+@@ -31,13 +31,13 @@ add_executable(component_container_callback_isolated
+ target_include_directories(component_container_callback_isolated PRIVATE
+   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+ )
+-ament_target_dependencies(component_container_callback_isolated rclcpp rclcpp_components cie_thread_configurator)
++target_link_libraries(component_container_callback_isolated rclcpp::rclcpp rclcpp_components::component_manager cie_thread_configurator::thread_configurator)
+ 
+ add_executable(component_container_single src/component_container_single.cpp)
+-ament_target_dependencies(component_container_single rclcpp rclcpp_components cie_thread_configurator)
++target_link_libraries(component_container_single rclcpp::rclcpp rclcpp_components::component_manager cie_thread_configurator::thread_configurator)
+ 
+ add_library(callback_isolated_executor SHARED src/callback_isolated_executor.cpp src/multi_threaded_executor_internal.cpp)
+-ament_target_dependencies(callback_isolated_executor rclcpp cie_thread_configurator cie_config_msgs)
++target_link_libraries(callback_isolated_executor rclcpp::rclcpp cie_thread_configurator::thread_configurator ${cie_config_msgs_TARGETS})
+ target_include_directories(callback_isolated_executor PUBLIC
+   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+   $<INSTALL_INTERFACE:include>
+@@ -70,7 +70,7 @@ if(BUILD_TESTING)
+ 
+   add_executable(cie_pubsub_test_node test/cie_pubsub_test_node.cpp)
+   target_link_libraries(cie_pubsub_test_node callback_isolated_executor)
+-  ament_target_dependencies(cie_pubsub_test_node rclcpp std_msgs)
++  target_link_libraries(cie_pubsub_test_node rclcpp::rclcpp ${std_msgs_TARGETS})
+ 
+   install(TARGETS cie_pubsub_test_node
+     RUNTIME DESTINATION lib/${PROJECT_NAME}
+diff --git a/callback_isolated_executor/include/callback_isolated_executor/callback_isolated_executor.hpp b/callback_isolated_executor/include/callback_isolated_executor/callback_isolated_executor.hpp
+index 9e4b806..4561ca3 100644
+--- a/callback_isolated_executor/include/callback_isolated_executor/callback_isolated_executor.hpp
++++ b/callback_isolated_executor/include/callback_isolated_executor/callback_isolated_executor.hpp
+@@ -61,8 +61,8 @@ public:
+ 
+   RCLCPP_PUBLIC
+   void add_callback_group(
+-      rclcpp::CallbackGroup::SharedPtr group_ptr,
+-      rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++      const rclcpp::CallbackGroup::SharedPtr &group_ptr,
++      const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+       bool notify = true) override;
+ 
+   RCLCPP_PUBLIC
+@@ -78,22 +78,22 @@ public:
+   get_automatically_added_callback_groups_from_nodes() override;
+ 
+   RCLCPP_PUBLIC
+-  void remove_callback_group(rclcpp::CallbackGroup::SharedPtr group_ptr,
++  void remove_callback_group(const rclcpp::CallbackGroup::SharedPtr &group_ptr,
+                              bool notify = true) override;
+ 
+   RCLCPP_PUBLIC
+-  void add_node(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++  void add_node(const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+                 bool notify = true) override;
+ 
+   RCLCPP_PUBLIC
+-  void add_node(rclcpp::Node::SharedPtr node_ptr, bool notify = true) override;
++  void add_node(const std::shared_ptr<rclcpp::Node> &node_ptr, bool notify = true) override;
+ 
+   RCLCPP_PUBLIC
+   void
+-  remove_node(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++  remove_node(const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+               bool notify = true) override;
+ 
+   RCLCPP_PUBLIC
+-  void remove_node(rclcpp::Node::SharedPtr node_ptr,
++  void remove_node(const std::shared_ptr<rclcpp::Node> &node_ptr,
+                    bool notify = true) override;
+ };
+diff --git a/callback_isolated_executor/src/callback_isolated_executor.cpp b/callback_isolated_executor/src/callback_isolated_executor.cpp
+index 6aa08f6..6e4840e 100644
+--- a/callback_isolated_executor/src/callback_isolated_executor.cpp
++++ b/callback_isolated_executor/src/callback_isolated_executor.cpp
+@@ -118,8 +118,8 @@ void CallbackIsolatedExecutor::spin_reentrant_callback_group(
+ }
+ 
+ void CallbackIsolatedExecutor::add_callback_group(
+-    rclcpp::CallbackGroup::SharedPtr group_ptr,
+-    rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++    const rclcpp::CallbackGroup::SharedPtr &group_ptr,
++    const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+     bool notify) {
+   (void)notify;
+ 
+@@ -224,7 +224,7 @@ std::vector<rclcpp::CallbackGroup::WeakPtr> CallbackIsolatedExecutor::
+ }
+ 
+ void CallbackIsolatedExecutor::remove_callback_group(
+-    rclcpp::CallbackGroup::SharedPtr group_ptr, bool notify) {
++    const rclcpp::CallbackGroup::SharedPtr &group_ptr, bool notify) {
+   (void)notify;
+ 
+   std::lock_guard<std::mutex> guard{mutex_};
+@@ -241,7 +241,7 @@ void CallbackIsolatedExecutor::remove_callback_group(
+ }
+ 
+ void CallbackIsolatedExecutor::add_node(
+-    rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++    const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+     bool notify) {
+   (void)notify;
+ 
+@@ -277,14 +277,14 @@ void CallbackIsolatedExecutor::add_node(
+   }
+ }
+ 
+-void CallbackIsolatedExecutor::add_node(rclcpp::Node::SharedPtr node_ptr,
++void CallbackIsolatedExecutor::add_node(const std::shared_ptr<rclcpp::Node> &node_ptr,
+                                         bool notify) {
+   (void)notify;
+   add_node(node_ptr->get_node_base_interface(), notify);
+ }
+ 
+ void CallbackIsolatedExecutor::remove_node(
+-    rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_ptr,
++    const rclcpp::node_interfaces::NodeBaseInterface::SharedPtr &node_ptr,
+     bool notify) {
+   (void)notify;
+ 
+@@ -304,7 +304,7 @@ void CallbackIsolatedExecutor::remove_node(
+   }
+ }
+ 
+-void CallbackIsolatedExecutor::remove_node(rclcpp::Node::SharedPtr node_ptr,
++void CallbackIsolatedExecutor::remove_node(const std::shared_ptr<rclcpp::Node> &node_ptr,
+                                            bool notify) {
+   remove_node(node_ptr->get_node_base_interface(), notify);
+ }
+diff --git a/cie_sample_application/CMakeLists.txt b/cie_sample_application/CMakeLists.txt
+index 0d16027..6e36263 100644
+--- a/cie_sample_application/CMakeLists.txt
++++ b/cie_sample_application/CMakeLists.txt
+@@ -27,23 +27,23 @@ endif()
+ include_directories(include)
+ 
+ add_library(sample_node SHARED src/sample_node.cpp)
+-ament_target_dependencies(sample_node rclcpp rclcpp_components std_msgs cie_thread_configurator)
++target_link_libraries(sample_node rclcpp::rclcpp rclcpp_components::component_manager ${std_msgs_TARGETS} cie_thread_configurator::thread_configurator)
+ rclcpp_components_register_nodes(sample_node "SampleNode")
+ 
+ add_executable(sample_node_main src/sample_node_main.cpp)
+ target_link_libraries(sample_node_main sample_node)
+-ament_target_dependencies(sample_node_main rclcpp callback_isolated_executor)
++target_link_libraries(sample_node_main rclcpp::rclcpp callback_isolated_executor::callback_isolated_executor)
+ 
+ add_library(reentrant_node SHARED src/reentrant_node.cpp)
+-ament_target_dependencies(reentrant_node rclcpp rclcpp_components std_msgs)
++target_link_libraries(reentrant_node rclcpp::rclcpp rclcpp_components::component_manager ${std_msgs_TARGETS})
+ rclcpp_components_register_nodes(reentrant_node "ReentrantNode")
+ 
+ add_executable(reentrant_node_main src/reentrant_node_main.cpp)
+ target_link_libraries(reentrant_node_main reentrant_node)
+-ament_target_dependencies(reentrant_node_main rclcpp callback_isolated_executor)
++target_link_libraries(reentrant_node_main rclcpp::rclcpp callback_isolated_executor::callback_isolated_executor)
+ 
+ add_executable(sample_non_ros_process src/sample_non_ros_process.cpp)
+-ament_target_dependencies(sample_non_ros_process cie_thread_configurator)
++target_link_libraries(sample_non_ros_process cie_thread_configurator::thread_configurator)
+ 
+ install(TARGETS
+   sample_node_main
+diff --git a/cie_thread_configurator/CMakeLists.txt b/cie_thread_configurator/CMakeLists.txt
+index 988d85a..35c31c7 100644
+--- a/cie_thread_configurator/CMakeLists.txt
++++ b/cie_thread_configurator/CMakeLists.txt
+@@ -12,18 +12,18 @@ find_package(cie_config_msgs REQUIRED)
+ find_package(yaml-cpp REQUIRED)
+ 
+ add_library(thread_configurator SHARED src/util.cpp)
+-ament_target_dependencies(thread_configurator rclcpp cie_config_msgs)
++target_link_libraries(thread_configurator rclcpp::rclcpp ${cie_config_msgs_TARGETS})
+ 
+ add_library(thread_configurator_node_core STATIC src/thread_configurator_node.cpp)
+-ament_target_dependencies(thread_configurator_node_core rclcpp cie_config_msgs)
++target_link_libraries(thread_configurator_node_core rclcpp::rclcpp ${cie_config_msgs_TARGETS})
+ target_link_libraries(thread_configurator_node_core yaml-cpp thread_configurator)
+ 
+ add_executable(thread_configurator_node src/thread_configurator_node_main.cpp)
+-ament_target_dependencies(thread_configurator_node rclcpp cie_config_msgs)
++target_link_libraries(thread_configurator_node rclcpp::rclcpp ${cie_config_msgs_TARGETS})
+ target_link_libraries(thread_configurator_node thread_configurator_node_core)
+ 
+ add_executable(prerun_node src/prerun_node_main.cpp src/prerun_node.cpp)
+-ament_target_dependencies(prerun_node rclcpp cie_config_msgs)
++target_link_libraries(prerun_node rclcpp::rclcpp ${cie_config_msgs_TARGETS})
+ target_link_libraries(prerun_node yaml-cpp thread_configurator)
+ 
+ target_include_directories(prerun_node PRIVATE
+@@ -72,13 +72,13 @@ if(BUILD_TESTING)
+ 
+   ament_add_ros_isolated_gtest(test_util test/test_util.cpp)
+   target_link_libraries(test_util thread_configurator)
+-  ament_target_dependencies(test_util rclcpp std_msgs std_srvs)
++  target_link_libraries(test_util rclcpp::rclcpp ${std_msgs_TARGETS} ${std_srvs_TARGETS})
+ 
+   ament_add_ros_isolated_gtest(test_thread_configurator_node
+     test/test_thread_configurator_node.cpp
+   )
+   target_link_libraries(test_thread_configurator_node thread_configurator_node_core)
+-  ament_target_dependencies(test_thread_configurator_node rclcpp cie_config_msgs)
++  target_link_libraries(test_thread_configurator_node rclcpp::rclcpp ${cie_config_msgs_TARGETS})
+ endif()
+ 
+ ament_package()
