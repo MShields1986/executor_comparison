@@ -50,7 +50,9 @@ Matches the topology in the [Polymath write-up][polymath].
 
 | executor | threads | ipc | throughput | mean latency | CPU |
 |---|---|---|---|---|---|
-| **events_cbg** | 1 | on | **100.0%** | ~0 ms | 64% |
+| **events_cbg** | 1 | on | **100.0%** | ~0 ms | **64%** |
+| callback_isolated | 1 | on | 99.5% | 0.01 ms | 121% |
+| callback_isolated | 8 | on | 99.4% | 0.01 ms | 120% |
 | events_cbg | 8 | on | 97.8% | ~0 ms | 110% |
 | single_threaded | 8 | on | 43.6% | 0.79 ms | 80% |
 | single_threaded | 1 | on | 40.3% | 0.85 ms | 80% |
@@ -58,6 +60,8 @@ Matches the topology in the [Polymath write-up][polymath].
 | multi_threaded | 8 | on | 12.1% | 0.18 ms | 98% |
 | events | 1 | on | 8.0% | 31.94 ms | 95% |
 | events_cbg | 1 | off | 34.2% | 0.04 ms | 84% |
+| callback_isolated | 8 | off | 25.7% | 17.02 ms | 157% |
+| callback_isolated | 1 | off | 25.0% | 16.84 ms | 157% |
 | events_cbg | 8 | off | 24.7% | 24.69 ms | 163% |
 | single_threaded | 8 | off | 13.5% | 10.57 ms | 80% |
 | single_threaded | 1 | off | 13.0% | 10.97 ms | 80% |
@@ -65,13 +69,33 @@ Matches the topology in the [Polymath write-up][polymath].
 | events | 1 | off | 4.5% | 42.90 ms | 96% |
 | multi_threaded | 8 | off | 4.0% | 93.02 ms | 108% |
 
-- `events_cbg` at one thread is the only configuration that keeps up, and it
-  does so at the *lowest* CPU of the set.
+- `events_cbg` at one thread is the only configuration to reach 100%, and it
+  does so at the lowest CPU of the set — roughly half what `callback_isolated`
+  needs for the same throughput.
+- `callback_isolated` is a close second on throughput but costs ~2× the CPU. It
+  also gets a structural advantage here that the others do not: in a single
+  process it hands the publisher node its own thread, rather than sharing one
+  executor with the subscriptions.
 - Eight threads makes everything worse except `single_threaded`, which ignores
   the setting. `multi_threaded` drops 12.9% → 4.0% and mean latency goes
   11 ms → 93 ms: contention, not parallelism.
-- The experimental `events` is the worst of the four. `events_cbg` is not an
+- The experimental `events` is the worst of the five. `events_cbg` is not an
   incremental improvement on it.
+
+All of the above use one shared `mutually_exclusive` group, which is the only
+like-for-like setting — `callback_isolated` then gets one worker thread like
+everyone else. Given a group per subscription it spawns 50 instead:
+
+| callback_isolated | threads | ipc | throughput | mean latency | CPU |
+|---|---|---|---|---|---|
+| `per_entity` | 8 | on | 99.3% | 0.02 ms | 121% |
+| `per_entity` | 1 | on | 98.0% | 0.02 ms | 121% |
+| `per_entity` | 1 | off | 27.5% | 0.25 ms | 283% |
+| `per_entity` | 8 | off | 25.5% | 0.26 ms | 272% |
+
+Fifty threads buy a large latency win without IPC (16.84 ms → 0.25 ms) but
+almost no extra throughput, at nearly double the CPU: this topology is
+bandwidth-bound, not dispatch-bound.
 
 An unsaturated sweep tells you much less — below roughly 210 µs everything ties
 on the middleware floor, and with one shared callback group `callback_isolated`
