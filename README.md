@@ -48,26 +48,30 @@ Matches the topology in the [Polymath write-up][polymath].
 
 <img src="https://github.com/MShields1986/executor_comparison/blob/main/img/executors_50topics_1MB_lyrical.png" width=80% height=80%>
 
+Ordered as the matrix runs them: executor, then thread count, then transport.
+
 | executor | threads | ipc | throughput | mean latency | CPU |
 |---|---|---|---|---|---|
-| **events_cbg** | 1 | on | **100.0%** | ~0 ms | **64%** |
-| callback_isolated | 1 | on | 99.5% | 0.01 ms | 121% |
-| callback_isolated | 8 | on | 99.4% | 0.01 ms | 120% |
-| events_cbg | 8 | on | 97.8% | ~0 ms | 110% |
-| single_threaded | 8 | on | 43.6% | 0.79 ms | 80% |
-| single_threaded | 1 | on | 40.3% | 0.85 ms | 80% |
-| multi_threaded | 1 | on | 37.4% | 0.94 ms | 80% |
-| multi_threaded | 8 | on | 12.1% | 0.18 ms | 98% |
-| events | 1 | on | 8.0% | 31.94 ms | 95% |
-| events_cbg | 1 | off | 34.2% | 0.04 ms | 84% |
-| callback_isolated | 8 | off | 25.7% | 17.02 ms | 157% |
-| callback_isolated | 1 | off | 25.0% | 16.84 ms | 157% |
-| events_cbg | 8 | off | 24.7% | 24.69 ms | 163% |
-| single_threaded | 8 | off | 13.5% | 10.57 ms | 80% |
 | single_threaded | 1 | off | 13.0% | 10.97 ms | 80% |
+| single_threaded | 1 | on | 40.3% | 0.85 ms | 80% |
+| single_threaded | 8 | off | 13.5% | 10.57 ms | 80% |
+| single_threaded | 8 | on | 43.6% | 0.79 ms | 80% |
 | multi_threaded | 1 | off | 12.9% | 10.99 ms | 80% |
-| events | 1 | off | 4.5% | 42.90 ms | 96% |
+| multi_threaded | 1 | on | 37.4% | 0.94 ms | 80% |
 | multi_threaded | 8 | off | 4.0% | 93.02 ms | 108% |
+| multi_threaded | 8 | on | 12.1% | 0.18 ms | 98% |
+| events | 1 | off | 4.5% | 42.90 ms | 96% |
+| events | 1 | on | 8.0% | 31.94 ms | 95% |
+| events | 8 | off | 4.5% | 43.00 ms | 95% |
+| events | 8 | on | 7.9% | 32.19 ms | 98% |
+| **events_cbg** | 1 | off | 34.2% | 0.04 ms | 84% |
+| **events_cbg** | 1 | on | **100.0%** | ~0 ms | **64%** |
+| events_cbg | 8 | off | 24.7% | 24.69 ms | 163% |
+| events_cbg | 8 | on | 97.8% | ~0 ms | 110% |
+| callback_isolated | 1 | off | 25.0% | 16.84 ms | 157% |
+| callback_isolated | 1 | on | 99.5% | 0.01 ms | 121% |
+| callback_isolated | 8 | off | 25.7% | 17.02 ms | 157% |
+| callback_isolated | 8 | on | 99.4% | 0.01 ms | 120% |
 
 - `events_cbg` at one thread is the only configuration to reach 100%, and it
   does so at the lowest CPU of the set — roughly half what `callback_isolated`
@@ -79,8 +83,8 @@ Matches the topology in the [Polymath write-up][polymath].
 - Eight threads makes everything worse except `single_threaded`, which ignores
   the setting. `multi_threaded` drops 12.9% → 4.0% and mean latency goes
   11 ms → 93 ms: contention, not parallelism.
-- The experimental `events` is the worst of the five. `events_cbg` is not an
-  incremental improvement on it.
+- The experimental `events` is the worst of the five, and ignores the thread
+  count. `events_cbg` is not an incremental improvement on it.
 
 All of the above use one shared `mutually_exclusive` group, which is the only
 like-for-like setting — `callback_isolated` then gets one worker thread like
@@ -88,14 +92,27 @@ everyone else. Given a group per subscription it spawns 50 instead:
 
 | callback_isolated | threads | ipc | throughput | mean latency | CPU |
 |---|---|---|---|---|---|
-| `per_entity` | 8 | on | 99.3% | 0.02 ms | 121% |
-| `per_entity` | 1 | on | 98.0% | 0.02 ms | 121% |
 | `per_entity` | 1 | off | 27.5% | 0.25 ms | 283% |
+| `per_entity` | 1 | on | 98.0% | 0.02 ms | 121% |
 | `per_entity` | 8 | off | 25.5% | 0.26 ms | 272% |
+| `per_entity` | 8 | on | 99.3% | 0.02 ms | 121% |
 
 Fifty threads buy a large latency win without IPC (16.84 ms → 0.25 ms) but
 almost no extra throughput, at nearly double the CPU: this topology is
 bandwidth-bound, not dispatch-bound.
+
+> **`callback_isolated` ran with its main feature switched off.** These numbers
+> use default scheduling — `SCHED_OTHER`, nice 0, no affinity. One thread per
+> callback group is only the mechanism; the point is being able to assign a
+> policy, priority and affinity *per group*, via the `cie_thread_configurator`
+> node, which this harness does not launch. The container publishes its
+> `CallbackGroupInfo` to `/cie_thread_configurator/callback_group_info` and
+> nothing subscribes. So the table shows the cost of the design (~2× the CPU of
+> `events_cbg` for the same throughput) with none of the benefit. Enabling it
+> needs `cap_add: [SYS_NICE]` and `ulimits.rtprio` on the compose service, a
+> `thread_configurator_node` in the launch, and a YAML mapping callback-group
+> IDs to policies — the IDs are derived from node name plus entity list, so
+> they have to be captured from a `prerun_node` pass first.
 
 An unsaturated sweep tells you much less — below roughly 210 µs everything ties
 on the middleware floor, and with one shared callback group `callback_isolated`
